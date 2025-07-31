@@ -31,7 +31,7 @@ def check_token_format():
     
     # トークンの形式チェック
     # Discord BOTトークンの一般的な形式:
-    # - 古い形式: 24文字.6文字.27文字 (例: MjM4NDk0OTMyMjA4Mjk4NDk2.CunGFQ.wUILz7z6HoJzVeIkpOzJCvPuM3o)
+    # - 古い形式: 24文字.6文字.27文字
     # - 新しい形式: "Bot " + base64エンコードされた文字列
     
     # 一般的なパターンをチェック
