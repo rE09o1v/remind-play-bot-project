@@ -13,6 +13,8 @@ from datetime import datetime
 import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+from aiohttp import web
+import threading
 
 # 環境変数の読み込み
 load_dotenv()
@@ -151,9 +153,42 @@ class ScheduleBot(commands.Bot):
         """
         await self.wait_until_ready()
 
+async def create_health_server():
+    """
+    Render用のヘルスチェックHTTPサーバーを作成
+    """
+    async def health_check(request):
+        return web.json_response({
+            "status": "healthy",
+            "service": "discord-schedule-bot",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+    
+    async def bot_status(request):
+        return web.json_response({
+            "status": "running",
+            "type": "discord-bot"
+        })
+    
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    app.router.add_get('/status', bot_status)
+    
+    # Renderから提供されるPORT環境変数を使用
+    port = int(os.getenv('PORT', 10000))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    logger.info(f"HTTPサーバーがポート {port} で起動しました (Render対応)")
+    return runner
+
 async def main():
     """
-    BOTのメイン実行関数
+    BOTのメイン実行関数 (Render対応版)
     """
     # Discord BOTトークンの確認
     token = os.getenv('DISCORD_TOKEN')
@@ -168,6 +203,10 @@ async def main():
         logger.error("デフォルトのトークンが設定されています。実際のBOTトークンに変更してください。")
         return
     
+    # Render用HTTPサーバーの起動
+    logger.info("Render用HTTPサーバーを起動中...")
+    http_runner = await create_health_server()
+    
     # BOTインスタンスの作成と起動
     bot = ScheduleBot()
     
@@ -179,19 +218,23 @@ async def main():
         logger.error("💡 BOTトークンが正しいか確認してください")
         logger.error("💡 Discord Developer Portalでトークンを再生成してみてください")
         await bot.close()
+        await http_runner.cleanup()
     except discord.HTTPException as e:
         logger.error(f"Discord API エラー: {e}")
         logger.error("💡 インターネット接続を確認してください")
         await bot.close()
+        await http_runner.cleanup()
     except KeyboardInterrupt:
         logger.info("BOTを停止しています...")
         await bot.close()
+        await http_runner.cleanup()
     except Exception as e:
         logger.error(f"BOT実行中にエラーが発生: {e}")
         logger.error(f"エラータイプ: {type(e).__name__}")
         import traceback
         logger.error(f"詳細エラー:\n{traceback.format_exc()}")
         await bot.close()
+        await http_runner.cleanup()
 
 if __name__ == '__main__':
     # Windowsでのイベントループポリシー設定（必要に応じて）
